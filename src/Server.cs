@@ -2,7 +2,6 @@
 using System.Net.Sockets;
 using System.Text;
 
-
 var ParseLength = (Byte[] bytes, int start) =>
 {
   int len = 0;
@@ -17,7 +16,7 @@ var ParseLength = (Byte[] bytes, int start) =>
     consumed++;
   }
 
-  // consumed + 2 to account for ending '\r\n'
+  // + 2 to account for ending '\r\n'
   return (len, consumed + 2);
 };
 
@@ -27,25 +26,30 @@ var ParseBulkStr = (Byte[] bytes, int start) =>
   Byte[] payload = new Byte[len];
   Array.Copy(bytes, start + consumed, payload, 0, len);
   var parsed = Encoding.ASCII.GetString(payload);
-  Console.WriteLine("ParsedBulkStr: {0}", parsed);
-  return (parsed, consumed + len);
+  // Console.WriteLine("ParsedBulkStr: {0}", parsed);
+
+  // + 2 to account for ending '\r\n'
+  return (parsed, consumed + len + 2);
 };
 
 var ParseClientMsg = (Byte[] msg) =>
 {
-  // Console.WriteLine("Client msg: {0}", Encoding.ASCII.GetString(msg));
+  Console.WriteLine("Client msg: {0}", Encoding.ASCII.GetString(msg));
 
   var (bulkStrsToParse, cursor) = ParseLength(msg, 0);
-  List<String> bulkStrs = new List<string>();
+  String bulkStr = "";
 
   for (int i = 0; i < bulkStrsToParse; i++)
   {
+    Console.WriteLine("Cursor: {0}", cursor);
     var (str, consumed) = ParseBulkStr(msg, cursor);
-    bulkStrs.Add(str);
+    bulkStr += (str + " ");
     cursor += consumed;
   }
+  bulkStr = bulkStr.TrimEnd();
 
-  return bulkStrs;
+  Console.WriteLine("BulkStr: {0}", bulkStr);
+  return bulkStr;
 };
 
 var ProcessPing = (String s) =>
@@ -57,8 +61,10 @@ var ProcessPing = (String s) =>
   };
 };
 
-TcpListener server = new TcpListener(IPAddress.Any, 6379);
-server.Start();
+var ProcessEcho = (String s) =>
+{
+  return String.Format("${0}\r\n{1}\r\n", s.Length - 5, s.Substring(5));
+};
 
 var HandleClient = (Socket client) =>
 {
@@ -68,22 +74,23 @@ var HandleClient = (Socket client) =>
     {
       Byte[] buf = new Byte[client.SendBufferSize];
       var bytesRead = client.Receive(buf);
+
+      if (bytesRead == 0) return;
+
       if (bytesRead < buf.Length)
       {
         Array.Resize(ref buf, bytesRead);
       }
 
-      List<string> commands = ParseClientMsg(buf);
-      foreach (string command in commands)
+      String command = ParseClientMsg(buf);
+      Console.WriteLine("Executing command: {0}", command);
+      var response = command.ToLower() switch
       {
-        Console.WriteLine("Executing command: {0}", command);
-        var response = command.ToLower() switch
-        {
-          var s when s.StartsWith("ping") => ProcessPing(s),
-          _ => throw new ArgumentException(String.Format("Received unknown redis command: {0}", command)),
-        };
-        client.Send(Encoding.ASCII.GetBytes(response));
-      }
+        var s when s.StartsWith("ping") => ProcessPing(s),
+        var s when s.StartsWith("echo") => ProcessEcho(s),
+        _ => throw new ArgumentException(String.Format("Received unknown redis command: {0}", command)),
+      };
+      client.Send(Encoding.ASCII.GetBytes(response));
     }
     catch (Exception e)
     {
@@ -91,6 +98,9 @@ var HandleClient = (Socket client) =>
     }
   }
 };
+
+TcpListener server = new TcpListener(IPAddress.Any, 6379);
+server.Start();
 
 while (true)
 {
