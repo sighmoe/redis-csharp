@@ -59,30 +59,45 @@ var ProcessPing = (String s) =>
 
 TcpListener server = new TcpListener(IPAddress.Any, 6379);
 server.Start();
-Socket client = server.AcceptSocket(); // wait for client
+
+var HandleClient = (Socket client) =>
+{
+  while (true)
+  {
+    try
+    {
+      Byte[] buf = new Byte[client.SendBufferSize];
+      var bytesRead = client.Receive(buf);
+      if (bytesRead < buf.Length)
+      {
+        Array.Resize(ref buf, bytesRead);
+      }
+
+      List<string> commands = ParseClientMsg(buf);
+      foreach (string command in commands)
+      {
+        Console.WriteLine("Executing command: {0}", command);
+        var response = command.ToLower() switch
+        {
+          var s when s.StartsWith("ping") => ProcessPing(s),
+          _ => throw new ArgumentException(String.Format("Received unknown redis command: {0}", command)),
+        };
+        client.Send(Encoding.ASCII.GetBytes(response));
+      }
+    }
+    catch (Exception e)
+    {
+      Console.WriteLine("Caught exception: {0}", e.ToString());
+    }
+  }
+};
 
 while (true)
 {
   try
   {
-    Byte[] buf = new Byte[client.SendBufferSize];
-    var bytesRead = client.Receive(buf);
-    if (bytesRead < buf.Length)
-    {
-      Array.Resize(ref buf, bytesRead);
-    }
-
-    List<string> commands = ParseClientMsg(buf);
-    foreach (string command in commands)
-    {
-      Console.WriteLine("Executing command: {0}", command);
-      var response = command.ToLower() switch
-      {
-        var s when s.StartsWith("ping") => ProcessPing(s),
-        _ => throw new ArgumentException(String.Format("Received unknown redis command: {0}", command)),
-      };
-      client.Send(Encoding.ASCII.GetBytes(response));
-    }
+    Socket client = server.AcceptSocket(); // wait for client
+    new Thread(() => HandleClient(client)).Start();
   }
   catch (Exception e)
   {
