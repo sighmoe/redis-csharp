@@ -1,8 +1,9 @@
 ﻿using System.Net;
 using System.Net.Sockets;
+using System.Runtime.Caching;
 using System.Text;
 
-Dictionary<string, string> db = new Dictionary<string, string>();
+var db = MemoryCache.Default;
 
 var ParseLength = (Byte[] bytes, int start) =>
 {
@@ -71,11 +72,25 @@ var ProcessEcho = (String s) =>
 var ProcessSet = (string s) =>
 {
   var parts = s.Split(" ");
-  if (parts.Length != 3 || parts[0] != "set")
+  if (parts.Length < 3 || parts[0] != "set")
   {
-    throw new ArgumentException("Expected: set <k> <v>, but got {0}", s);
+    throw new ArgumentException("Expected: set <k> <v> [px <t>], but got {0}", s);
   }
-  db.Add(parts[1], parts[2]);
+  else if (parts.Length > 4 && parts[3] != "px")
+  {
+    throw new ArgumentException("Expected: set <k> <v> px <t>, but got {0}", s);
+  }
+
+
+  if (parts.Length == 5)
+  {
+    var ttl = int.Parse(parts[4]);
+    db.Set(parts[1], (object)parts[2], DateTimeOffset.Now.AddMilliseconds(ttl));
+  }
+  else
+  {
+    db.Set(parts[1], (object)parts[2], DateTimeOffset.MaxValue);
+  }
   return "+OK\r\n";
 };
 
@@ -87,12 +102,13 @@ var ProcessGet = (string s) =>
     throw new ArgumentException("Expected: get <k>, but got {0}", s);
   }
 
-  if (!db.ContainsKey(parts[1]))
+
+  string? val = db[parts[1]] as string;
+  if (val == null)
   {
     return "$-1\r\n";
   }
 
-  var val = db[parts[1]];
   return String.Format("${0}\r\n{1}\r\n", val.Length, val);
 };
 
