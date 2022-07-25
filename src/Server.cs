@@ -2,6 +2,8 @@
 using System.Net.Sockets;
 using System.Text;
 
+Dictionary<string, string> db = new Dictionary<string, string>();
+
 var ParseLength = (Byte[] bytes, int start) =>
 {
   int len = 0;
@@ -66,6 +68,17 @@ var ProcessEcho = (String s) =>
   return String.Format("${0}\r\n{1}\r\n", s.Length - 5, s.Substring(5));
 };
 
+var ProcessSet = (string s) =>
+{
+  var parts = s.Split(" ");
+  if (parts.Length != 3 || parts[0] != "set")
+  {
+    throw new ArgumentException("Expected: set <k> <v>, but got {0}", s);
+  }
+  db.Add(parts[1], parts[2]);
+  return "+OK\r\n";
+};
+
 var HandleClient = (Socket client) =>
 {
   while (true)
@@ -88,6 +101,7 @@ var HandleClient = (Socket client) =>
       {
         var s when s.StartsWith("ping") => ProcessPing(s),
         var s when s.StartsWith("echo") => ProcessEcho(s),
+        var s when s.StartsWith("set") => ProcessSet(s),
         _ => throw new ArgumentException(String.Format("Received unknown redis command: {0}", command)),
       };
       client.Send(Encoding.ASCII.GetBytes(response));
