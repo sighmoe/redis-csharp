@@ -36,21 +36,21 @@ var ParseBulkStr = (Byte[] bytes, int start) =>
 
 var ParseClientMsg = (Byte[] msg) =>
 {
-  Console.WriteLine("Client msg: {0}", Encoding.ASCII.GetString(msg));
+  // Console.WriteLine("Client msg: {0}", Encoding.ASCII.GetString(msg));
 
   var (bulkStrsToParse, cursor) = ParseLength(msg, 0);
   String bulkStr = "";
 
   for (int i = 0; i < bulkStrsToParse; i++)
   {
-    Console.WriteLine("Cursor: {0}", cursor);
+    // Console.WriteLine("Cursor: {0}", cursor);
     var (str, consumed) = ParseBulkStr(msg, cursor);
     bulkStr += (str + " ");
     cursor += consumed;
   }
   bulkStr = bulkStr.TrimEnd();
 
-  Console.WriteLine("BulkStr: {0}", bulkStr);
+  // Console.WriteLine("BulkStr: {0}", bulkStr);
   return bulkStr;
 };
 
@@ -79,6 +79,23 @@ var ProcessSet = (string s) =>
   return "+OK\r\n";
 };
 
+var ProcessGet = (string s) =>
+{
+  var parts = s.Split(" ");
+  if (parts.Length != 2 || parts[0] != "get")
+  {
+    throw new ArgumentException("Expected: get <k>, but got {0}", s);
+  }
+
+  if (!db.ContainsKey(parts[1]))
+  {
+    return "$-1\r\n";
+  }
+
+  var val = db[parts[1]];
+  return String.Format("${0}\r\n{1}\r\n", val.Length, val);
+};
+
 var HandleClient = (Socket client) =>
 {
   while (true)
@@ -102,6 +119,7 @@ var HandleClient = (Socket client) =>
         var s when s.StartsWith("ping") => ProcessPing(s),
         var s when s.StartsWith("echo") => ProcessEcho(s),
         var s when s.StartsWith("set") => ProcessSet(s),
+        var s when s.StartsWith("get") => ProcessGet(s),
         _ => throw new ArgumentException(String.Format("Received unknown redis command: {0}", command)),
       };
       client.Send(Encoding.ASCII.GetBytes(response));
